@@ -1,0 +1,8 @@
+apiVersion: v2
+name: myapp-composition
+description: >-
+  Platform API for MyApp - the XRD (the menu) and the Composition (the recipe).
+  Installed once per cluster by the platform team.
+type: application
+version: 0.1.0
+appVersion: "v1alpha1"

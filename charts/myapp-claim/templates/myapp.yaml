@@ -1,0 +1,14 @@
+apiVersion: crossplane.best-practice.com/v1alpha1
+kind: MyApp
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  team: {{ .Values.team }}
+  region: {{ .Values.region }}
+  {{- with .Values.extraPolicyActions }}
+  extraPolicyActions: {{ toJson . }}
+  {{- end }}
+  {{- with .Values.providerConfigRef }}
+  providerConfigRef: {{ toJson . }}
+  {{- end }}

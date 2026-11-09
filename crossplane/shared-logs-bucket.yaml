@@ -1,0 +1,17 @@
+# Pre-existing platform resource, owned by someone else (here: the platform
+# team's namespace). MyApp only OBSERVES it to read status.atProvider.arn.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform
+---
+apiVersion: s3.aws.m.upbound.io/v1beta1
+kind: Bucket
+metadata:
+  name: platform-logs
+  namespace: platform
+  annotations:
+    crossplane.io/external-name: platform-shared-logs
+spec:
+  forProvider:
+    region: us-east-1

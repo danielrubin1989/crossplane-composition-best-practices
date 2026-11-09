@@ -1,0 +1,12 @@
+name: checkout
+team: payments
+region: us-east-1
+
+# Extra S3 actions on the app bucket. Typos here are not caught by the XRD -
+# AWS rejects them, which is what the troubleshooting part of the demo shows.
+extraPolicyActions: []
+
+# Leave empty to use ClusterProviderConfig "default" (the XRD default).
+# Example override for another AWS account:
+#   providerConfigRef: {kind: ClusterProviderConfig, name: cross-account-prod}
+providerConfigRef: {}

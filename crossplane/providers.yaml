@@ -1,0 +1,33 @@
+# provider-aws-iam / provider-aws-s3 pull in provider-family-aws automatically.
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-aws-iam
+spec:
+  package: xpkg.crossplane.io/crossplane-contrib/provider-aws-iam:v2.9.0
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-aws-s3
+spec:
+  package: xpkg.crossplane.io/crossplane-contrib/provider-aws-s3:v2.9.0
+---
+# Fixed ServiceAccount name so we can grant it exactly the RBAC it needs.
+apiVersion: pkg.crossplane.io/v1beta1
+kind: DeploymentRuntimeConfig
+metadata:
+  name: provider-kubernetes
+spec:
+  serviceAccountTemplate:
+    metadata:
+      name: provider-kubernetes
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-kubernetes
+spec:
+  package: xpkg.crossplane.io/crossplane-contrib/provider-kubernetes:v1.4.1
+  runtimeConfigRef:
+    name: provider-kubernetes

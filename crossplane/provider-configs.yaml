@@ -1,0 +1,70 @@
+# Fake credentials - moto accepts anything.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aws-mock-creds
+  namespace: crossplane-system
+stringData:
+  credentials: |
+    [default]
+    aws_access_key_id = test
+    aws_secret_access_key = test
+---
+# Named "default" on purpose: an MR without providerConfigRef gets
+# {kind: ClusterProviderConfig, name: default} from its CRD, so no composed
+# resource has to name a config. Each provider family has its own "default".
+# Every AWS call goes to moto instead of amazonaws.com.
+apiVersion: aws.m.upbound.io/v1beta1
+kind: ClusterProviderConfig
+metadata:
+  name: default
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      namespace: crossplane-system
+      name: aws-mock-creds
+      key: credentials
+  endpoint:
+    hostnameImmutable: true
+    services: [iam, s3, s3control, sts]
+    url:
+      type: Static
+      static: http://moto.aws-mock.svc.cluster.local:5000
+  s3_use_path_style: true
+  skip_credentials_validation: true
+  skip_metadata_api_check: true
+  skip_region_validation: true
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: ClusterProviderConfig
+metadata:
+  name: default
+spec:
+  credentials:
+    source: InjectedIdentity
+---
+# Least privilege: provider-kubernetes may only touch S3 Buckets. Observe means
+# it never writes - but with server-side apply on (the default) it still runs a
+# dry-run SSA patch to diff desired vs observed, so `patch` is required.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: provider-kubernetes-observe-buckets
+rules:
+- apiGroups: [s3.aws.m.upbound.io]
+  resources: [buckets]
+  verbs: [get, list, watch, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: provider-kubernetes-observe-buckets
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: provider-kubernetes-observe-buckets
+subjects:
+- kind: ServiceAccount
+  name: provider-kubernetes
+  namespace: crossplane-system

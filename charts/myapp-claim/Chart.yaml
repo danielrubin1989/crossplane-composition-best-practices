@@ -1,0 +1,8 @@
+apiVersion: v2
+name: myapp-claim
+description: >-
+  What a developer deploys - one namespaced MyApp (Crossplane v2 XR, scope
+  Namespaced). Five lines of values instead of raw IAM and S3.
+type: application
+version: 0.1.0
+appVersion: "v1alpha1"

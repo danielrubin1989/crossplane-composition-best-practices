@@ -1,0 +1,82 @@
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: myapps.crossplane.best-practice.com
+spec:
+  # Crossplane v2: the XR itself is namespaced - no separate Claim kind.
+  scope: Namespaced
+  group: crossplane.best-practice.com
+  names:
+    kind: MyApp
+    plural: myapps
+  versions:
+  - name: v1alpha1
+    served: true
+    referenceable: true
+    # Crossplane v2 adds SYNCED / READY / COMPOSITION / AGE on its own.
+    additionalPrinterColumns:
+    - name: HEALTHY
+      type: string
+      jsonPath: .status.conditions[?(@.type=='ResourcesHealthy')].status
+    - name: ROLE-ARN
+      type: string
+      jsonPath: .status.roleArn
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            required:
+            - team
+            properties:
+              team:
+                type: string
+                description: Owning team. Used for tags and naming.
+              region:
+                type: string
+                default: us-east-1
+                enum: [us-east-1, us-west-2, eu-west-1]
+              sharedLogsBucket:
+                type: object
+                description: >-
+                  Existing platform bucket the app ships logs to. Crossplane only
+                  observes it (provider-kubernetes Object, managementPolicies Observe).
+                default:
+                  name: platform-logs
+                  namespace: platform
+                properties:
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+              extraPolicyActions:
+                type: array
+                description: Extra S3 actions granted on the app bucket.
+                items:
+                  type: string
+              providerConfigRef:
+                type: object
+                description: >-
+                  AWS provider config for every AWS resource of this app. Defaults to
+                  the same value an MR gets when providerConfigRef is omitted, so most
+                  apps never set it. Override for another account (cross-account) or a
+                  team's namespaced ProviderConfig.
+                default: {}
+                properties:
+                  kind:
+                    type: string
+                    default: ClusterProviderConfig
+                    enum: [ClusterProviderConfig, ProviderConfig]
+                  name:
+                    type: string
+                    default: default
+          status:
+            type: object
+            properties:
+              roleArn:
+                type: string
+              bucketArn:
+                type: string
+              sharedLogsBucketArn:
+                type: string

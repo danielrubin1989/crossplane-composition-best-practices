@@ -1,0 +1,216 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: myapp
+spec:
+  compositeTypeRef:
+    apiVersion: crossplane.best-practice.com/v1alpha1
+    kind: MyApp
+  mode: Pipeline
+  pipeline:
+  # 1. In-cluster render. Helm only ships this template; Crossplane renders it on
+  #    every reconcile with the live XR and the OBSERVED state of its children.
+  - step: render
+    functionRef:
+      name: function-go-templating
+    input:
+      apiVersion: gotemplating.fn.crossplane.io/v1beta1
+      kind: GoTemplate
+      # [[ ]] instead of the default curly-brace delimiters: Helm doesn't recognise
+      # them, so it ships this template untouched and Crossplane renders it
+      # in-cluster with .observed.resources.
+      delims:
+        left: '[['
+        right: ']]'
+      source: Inline
+      inline:
+        template: |
+          [[- $xr := .observed.composite.resource ]]
+          [[- $name := $xr.metadata.name ]]
+          [[- $ns := $xr.metadata.namespace ]]
+          [[- $spec := $xr.spec ]]
+          [[- $observed := .observed.resources | default dict ]]
+          [[- $awsName := printf "%s-%s" $ns $name ]]
+          [[- $tags := dict "managed-by" "crossplane" "team" $spec.team "app" $name "namespace" $ns ]]
+          [[- /* XRD defaults it to ClusterProviderConfig/default - same as an MR with no ref. */]]
+          [[- $pcr := $spec.providerConfigRef ]]
+
+          [[- /* Live values read back from observed children (empty until they exist). */]]
+          [[- $roleArn := dig "role" "resource" "status" "atProvider" "arn" "" $observed ]]
+          [[- $bucketArn := dig "bucket" "resource" "status" "atProvider" "arn" "" $observed ]]
+          [[- $logsArn := dig "shared-logs" "resource" "status" "atProvider" "manifest" "status" "atProvider" "arn" "" $observed ]]
+          ---
+          # OBSERVE an existing resource we do not own: the shared platform logs bucket.
+          # Crossplane never creates/updates/deletes it - it only reads its status.
+          apiVersion: kubernetes.m.crossplane.io/v1alpha1
+          kind: Object
+          metadata:
+            name: [[ $name ]]-shared-logs
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: shared-logs
+          spec:
+            managementPolicies: ["Observe"]
+            # Default readiness is SuccessfulCreate - an Observe-only Object never creates,
+            # so it would never be Ready. Mirror the observed bucket's Ready instead.
+            readiness:
+              policy: DeriveFromObject
+            forProvider:
+              manifest:
+                apiVersion: s3.aws.m.upbound.io/v1beta1
+                kind: Bucket
+                metadata:
+                  name: [[ $spec.sharedLogsBucket.name ]]
+                  namespace: [[ $spec.sharedLogsBucket.namespace ]]
+          ---
+          apiVersion: s3.aws.m.upbound.io/v1beta1
+          kind: Bucket
+          metadata:
+            name: [[ $name ]]
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: bucket
+              crossplane.io/external-name: [[ $awsName ]]-data
+          spec:
+            forProvider:
+              region: [[ $spec.region ]]
+              tags: [[ $tags | toJson ]]
+            providerConfigRef:
+              kind: [[ $pcr.kind ]]
+              name: [[ $pcr.name ]]
+          ---
+          apiVersion: iam.aws.m.upbound.io/v1beta1
+          kind: Role
+          metadata:
+            name: [[ $name ]]
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: role
+              crossplane.io/external-name: [[ $awsName ]]
+          spec:
+            forProvider:
+              assumeRolePolicy: [[ dict "Version" "2012-10-17" "Statement" (list (dict "Effect" "Allow" "Principal" (dict "Service" "pods.eks.amazonaws.com") "Action" (list "sts:AssumeRole" "sts:TagSession"))) | toJson | quote ]]
+              tags: [[ $tags | toJson ]]
+            providerConfigRef:
+              kind: [[ $pcr.kind ]]
+              name: [[ $pcr.name ]]
+          [[- /*
+            The policy needs two ARNs. Our bucket's only exists AFTER AWS created it -
+            until then we simply don't emit the policy. The observed shared bucket's is
+            gated by the sequencer (step 3): the policy waits until shared-logs is Ready.
+          */]]
+          [[- if $bucketArn ]]
+          [[- $statements := list
+                (dict "Sid" "AppBucket" "Effect" "Allow"
+                      "Action" (concat (list "s3:GetObject" "s3:PutObject" "s3:ListBucket") ($spec.extraPolicyActions | default list))
+                      "Resource" (list $bucketArn (printf "%s/*" $bucketArn)))
+                (dict "Sid" "SharedLogs" "Effect" "Allow"
+                      "Action" (list "s3:PutObject")
+                      "Resource" (list (printf "%s/%s/%s/*" $logsArn $ns $name))) ]]
+          ---
+          apiVersion: iam.aws.m.upbound.io/v1beta1
+          kind: Policy
+          metadata:
+            name: [[ $name ]]
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: policy
+              crossplane.io/external-name: [[ $awsName ]]
+          spec:
+            forProvider:
+              policy: [[ dict "Version" "2012-10-17" "Statement" $statements | toJson | quote ]]
+              tags: [[ $tags | toJson ]]
+            providerConfigRef:
+              kind: [[ $pcr.kind ]]
+              name: [[ $pcr.name ]]
+          ---
+          apiVersion: iam.aws.m.upbound.io/v1beta1
+          kind: RolePolicyAttachment
+          metadata:
+            name: [[ $name ]]
+            annotations:
+              gotemplating.fn.crossplane.io/composition-resource-name: role-policy-attachment
+          spec:
+            forProvider:
+              roleRef:
+                name: [[ $name ]]
+              policyArnRef:
+                name: [[ $name ]]
+            providerConfigRef:
+              kind: [[ $pcr.kind ]]
+              name: [[ $pcr.name ]]
+          [[- end ]]
+          ---
+          # No resource-name annotation = this updates the XR's own status.
+          apiVersion: crossplane.best-practice.com/v1alpha1
+          kind: MyApp
+          status:
+            roleArn: [[ $roleArn | quote ]]
+            bucketArn: [[ $bucketArn | quote ]]
+            sharedLogsBucketArn: [[ $logsArn | quote ]]
+
+  # 2. Ready: a composed resource is Ready when its own Ready condition is True.
+  #    The XR is Ready only when ALL composed resources are Ready.
+  - step: auto-ready
+    functionRef:
+      name: function-auto-ready
+
+  # 3. Dependencies: don't create the attachment until the role and the policy
+  #    are Ready - no "referenced field was empty" noise in the events.
+  #    And don't create the policy until the observed shared bucket is Ready -
+  #    its ARN goes into the policy's SharedLogs statement.
+  - step: sequence
+    functionRef:
+      name: function-sequencer
+    input:
+      apiVersion: sequencer.fn.crossplane.io/v1beta1
+      kind: Input
+      rules:
+      - sequence:
+        - role
+        - policy
+        - role-policy-attachment
+      - sequence:
+        - shared-logs
+        - policy
+
+  # 4. ArgoCD health: lift a child's AWS error onto the XR as ResourcesHealthy=False.
+  #    A failed UPDATE leaves the XR Ready=True, so ArgoCD would say Healthy; a failed
+  #    CREATE leaves it Progressing forever. Either way the real message is hidden.
+  - step: status
+    functionRef:
+      name: function-status-transformer
+    input:
+      apiVersion: function-status-transformer.fn.crossplane.io/v1beta1
+      kind: StatusTransformation
+      statusConditionHooks:
+      - matchers:
+        - type: AnyResourceMatchesAnyCondition
+          resources:
+          - name: ".*"
+          conditions:
+          - type: Synced
+            status: "False"
+            reason: ReconcileError
+            message: "(?P<Error>(?s).+)"
+        setConditions:
+        - target: Composite
+          condition:
+            type: ResourcesHealthy
+            status: "False"
+            reason: ReconcileError
+            message: "{{ "{{" }} .Error {{ "}}" }}"
+        createEvents:
+        - target: Composite
+          event:
+            type: Warning
+            reason: ReconcileError
+            message: "{{ "{{" }} .Error {{ "}}" }}"
+      - matchers:
+        - resources:
+          - name: ".*"
+          conditions:
+          - type: Synced
+            status: "True"
+        setConditions:
+        - target: Composite
+          condition:
+            type: ResourcesHealthy
+            status: "True"
+            reason: AllSynced

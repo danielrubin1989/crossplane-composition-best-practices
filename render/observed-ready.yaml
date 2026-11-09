@@ -1,0 +1,64 @@
+# Fake "what the providers reported back" for `crossplane render -o`.
+# Simulates reconcile #2: role, bucket and the observed shared bucket are Ready
+# and have ARNs - so the template now emits the Policy and the attachment.
+apiVersion: iam.aws.m.upbound.io/v1beta1
+kind: Role
+metadata:
+  name: checkout
+  namespace: team-payments
+  annotations:
+    crossplane.io/composition-resource-name: role
+status:
+  atProvider:
+    arn: arn:aws:iam::123456789012:role/team-payments-checkout
+  conditions:
+  - type: Ready
+    status: "True"
+    reason: Available
+  - type: Synced
+    status: "True"
+    reason: ReconcileSuccess
+---
+apiVersion: s3.aws.m.upbound.io/v1beta1
+kind: Bucket
+metadata:
+  name: checkout
+  namespace: team-payments
+  annotations:
+    crossplane.io/composition-resource-name: bucket
+status:
+  atProvider:
+    arn: arn:aws:s3:::team-payments-checkout-data
+  conditions:
+  - type: Ready
+    status: "True"
+    reason: Available
+  - type: Synced
+    status: "True"
+    reason: ReconcileSuccess
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: checkout-shared-logs
+  namespace: team-payments
+  annotations:
+    crossplane.io/composition-resource-name: shared-logs
+status:
+  atProvider:
+    manifest:
+      apiVersion: s3.aws.m.upbound.io/v1beta1
+      kind: Bucket
+      metadata:
+        name: platform-logs
+        namespace: platform
+      status:
+        atProvider:
+          arn: arn:aws:s3:::platform-shared-logs
+  conditions:
+  - type: Ready
+    status: "True"
+    reason: Available
+  - type: Synced
+    status: "True"
+    reason: ReconcileSuccess

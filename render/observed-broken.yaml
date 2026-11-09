@@ -1,0 +1,81 @@
+# Reconcile #3 gone wrong: AWS rejected the Policy (bad action in
+# extraPolicyActions). Shows how function-status-transformer lifts the child
+# error onto the MyApp as ResourcesHealthy=False - what ArgoCD reads.
+apiVersion: iam.aws.m.upbound.io/v1beta1
+kind: Role
+metadata:
+  name: checkout
+  namespace: team-payments
+  annotations:
+    crossplane.io/composition-resource-name: role
+status:
+  atProvider:
+    arn: arn:aws:iam::123456789012:role/team-payments-checkout
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Available
+    - type: Synced
+      status: "True"
+      reason: ReconcileSuccess
+---
+apiVersion: s3.aws.m.upbound.io/v1beta1
+kind: Bucket
+metadata:
+  name: checkout
+  namespace: team-payments
+  annotations:
+    crossplane.io/composition-resource-name: bucket
+status:
+  atProvider:
+    arn: arn:aws:s3:::team-payments-checkout-data
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Available
+    - type: Synced
+      status: "True"
+      reason: ReconcileSuccess
+---
+apiVersion: kubernetes.m.crossplane.io/v1alpha1
+kind: Object
+metadata:
+  name: checkout-shared-logs
+  namespace: team-payments
+  annotations:
+    crossplane.io/composition-resource-name: shared-logs
+status:
+  atProvider:
+    manifest:
+      apiVersion: s3.aws.m.upbound.io/v1beta1
+      kind: Bucket
+      metadata:
+        name: platform-logs
+        namespace: platform
+      status:
+        atProvider:
+          arn: arn:aws:s3:::platform-shared-logs
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Available
+    - type: Synced
+      status: "True"
+      reason: ReconcileSuccess
+---
+apiVersion: iam.aws.m.upbound.io/v1beta1
+kind: Policy
+metadata:
+  name: checkout
+  namespace: team-payments
+  annotations:
+    crossplane.io/composition-resource-name: policy
+status:
+  conditions:
+    - type: Ready
+      status: "False"
+      reason: Creating
+    - type: Synced
+      status: "False"
+      reason: ReconcileError
+      message: 'update failed: async update failed: failed to update the resource: [{0 updating IAM Policy (arn:aws:iam::123456789012:policy/team-payments-checkout): operation error IAM: CreatePolicyVersion, https response error StatusCode: 400, RequestID: k2J00wPw534u3HFIxA3F1P7jEr4sIxLyV5fIpLNgwC2vNaqMwX4s, MalformedPolicyDocument: Actions/Conditions must be prefaced by a vendor, e.g., iam, sdb, ec2, etc.  []}]'

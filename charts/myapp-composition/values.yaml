@@ -1,0 +1,3 @@
+# Nothing to configure: Helm only ships the XRD and the Composition.
+# The Composition template uses [[ ]] delimiters, so Helm copies it verbatim and
+# Crossplane renders it in-cluster.
